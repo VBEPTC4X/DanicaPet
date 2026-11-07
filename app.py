@@ -1817,6 +1817,7 @@ class Pet(QWidget):
             self.say(text, 6000)
 
     def set_mode(self, mode: str):
+        old_h = self.height()
         self.mode = mode
         if mode == "angry":
             self.pix = self.angry
@@ -1828,7 +1829,22 @@ class Pet(QWidget):
             self.pix = self.idle
         self._ph = TYPING_HEIGHT if mode == "typing" else PET_HEIGHT
         self.resize(*self._base_size())
+        # 窗口高度变了就按「底边不动」补偿，否则人物会被顶到屏幕外
+        new_h = self.height()
+        if old_h and new_h != old_h:
+            self.move(self.x(), self.y() - (new_h - old_h))
+        self._clamp_on_screen()
         self.update()
+
+    def _clamp_on_screen(self):
+        scr = QApplication.screenAt(self.frameGeometry().center()) or QApplication.primaryScreen()
+        if not scr:
+            return
+        a = scr.availableGeometry()
+        x = max(a.left() + 4, min(self.x(), a.right() - self.width() - 4))
+        y = max(a.top() + 4, min(self.y(), a.bottom() - self.height() - 4))
+        if x != self.x() or y != self.y():
+            self.move(x, y)
 
     def bounce(self):
         anim = QPropertyAnimation(self, b"scale", self)
