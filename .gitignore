@@ -1,0 +1,13 @@
+﻿# Python
+__pycache__/
+*.py[cod]
+.venv/
+.buildenv/
+
+# PyInstaller
+build/
+dist/
+*.spec.bak
+
+# 离线发布包
+*.zip
