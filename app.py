@@ -1,3 +1,7 @@
+# DanicaPet - 达妮卡桌宠
+# Copyright (c) 2026 VBEPTC4X. All rights reserved.
+# 本文件为专有软件源码，未经著作权人书面许可，不得复制、修改或再分发。
+
 """桌面宠物 · 达妮卡
 
 - 透明无边框置顶窗口，鼠标左键拖动
@@ -91,7 +95,6 @@ DEFAULT_CONFIG = {
     "api_key": "",
     "input_hook": True,
     "fs_typing": True,
-    "follow_caret": True,
 }
 
 
@@ -225,42 +228,6 @@ def shell_fullscreen_active() -> bool:
         return hr == 0 and state.value in (3, 4)
     except Exception:
         return False
-
-
-class GUITHREADINFO(ctypes.Structure):
-    _fields_ = [
-        ("cbSize", wintypes.DWORD),
-        ("flags", wintypes.DWORD),
-        ("hwndActive", wintypes.HWND),
-        ("hwndFocus", wintypes.HWND),
-        ("hwndCapture", wintypes.HWND),
-        ("hwndMenuOwner", wintypes.HWND),
-        ("hwndMoveSize", wintypes.HWND),
-        ("hwndCaret", wintypes.HWND),
-        ("rcCaret", wintypes.RECT),
-    ]
-
-
-def caret_screen_pos(own_hwnd: int = 0) -> tuple[int, int] | None:
-    """取当前前台窗口里文本光标的屏幕坐标。取不到就返回 None。"""
-    try:
-        user32 = ctypes.windll.user32
-        hwnd = user32.GetForegroundWindow()
-        if not hwnd or hwnd == own_hwnd:
-            return None
-        tid = user32.GetWindowThreadProcessId(hwnd, None)
-        gti = GUITHREADINFO()
-        gti.cbSize = ctypes.sizeof(GUITHREADINFO)
-        if not user32.GetGUIThreadInfo(tid, ctypes.byref(gti)):
-            return None
-        if not gti.hwndCaret:
-            return None
-        rc = gti.rcCaret
-        if rc.right <= rc.left and rc.bottom <= rc.top:
-            return None
-        return (rc.left, rc.bottom)
-    except Exception:
-        return None
 
 
 def foreground_is_fullscreen(own_hwnd: int = 0) -> bool:
@@ -1344,8 +1311,6 @@ class Pet(QWidget):
         self._daze = 0
         self._hidden_for_fullscreen = False
         self._fs_typing = bool(CONFIG.get("fs_typing", True))
-        self._home_pos = None
-        self._caret_follow = bool(CONFIG.get("follow_caret", True))
         self._hwnd = 0
         self._started = time.time()
         self._rest_notice = 0
@@ -1457,39 +1422,9 @@ class Pet(QWidget):
         if self.mode in ("idle", "typing"):
             if self.mode != "typing":
                 self.set_mode("typing")
-                if self._caret_follow:
-                    self._home_pos = self.pos()
-                    target = self._caret_target()
-                    if target is not None:
-                        self._animate_to(target)
             self._typing_until = time.time() + 0.7
             self._sync_visibility()
         self.update()
-
-    def _caret_target(self):
-        """把桌宠摆到光标右侧；右边放不下就放左侧；取不到光标返回 None。"""
-        pos = caret_screen_pos(int(self.winId()))
-        if not pos:
-            return None
-        scr = QApplication.screenAt(QPoint(pos[0], pos[1])) or QApplication.primaryScreen()
-        area = scr.availableGeometry()
-        w, h = self.width(), self.height()
-        x = pos[0] + 24
-        y = pos[1] - h // 2
-        if x + w > area.right() - 8:
-            x = pos[0] - w - 24
-        x = max(area.left() + 4, min(x, area.right() - w - 4))
-        y = max(area.top() + 4, min(y, area.bottom() - h - 4))
-        return QPoint(int(x), int(y))
-
-    def _animate_to(self, pt: QPoint):
-        anim = QPropertyAnimation(self, b"pos", self)
-        anim.setDuration(220)
-        anim.setEasingCurve(QEasingCurve.OutCubic)
-        anim.setStartValue(self.pos())
-        anim.setEndValue(pt)
-        anim.start(QPropertyAnimation.DeleteWhenStopped)
-        self._move_anim = anim
 
     def _on_mouse(self, _btn: str):
         # 用鼠标不切换画面，只让鼠标位置闪一下
@@ -1513,10 +1448,6 @@ class Pet(QWidget):
             and now > self._typing_until
         ):
             self.set_mode("idle")
-            if self._home_pos is not None:
-                home = self._home_pos
-                self._home_pos = None
-                self._animate_to(home)
             self._sync_visibility()
             changed = True
         if changed:
@@ -1637,10 +1568,6 @@ class Pet(QWidget):
         self.act_fs.setCheckable(True)
         self.act_fs.setChecked(self._fs_typing)
         self.act_fs.triggered.connect(lambda *_: self.toggle_fs_typing())
-        self.act_caret = QAction("打字时跟随光标", self)
-        self.act_caret.setCheckable(True)
-        self.act_caret.setChecked(self._caret_follow)
-        self.act_caret.triggered.connect(lambda *_: self.toggle_caret_follow())
         act_quit = QAction("退出", self)
         act_quit.triggered.connect(lambda *_: QApplication.instance().quit())
         menu.addAction(act_chat)
@@ -1652,7 +1579,6 @@ class Pet(QWidget):
         menu.addAction(act_link)
         menu.addAction(self.act_hook)
         menu.addAction(self.act_fs)
-        menu.addAction(self.act_caret)
         menu.addSeparator()
         menu.addAction(act_quit)
         menu.exec(ev.globalPos())
@@ -1923,16 +1849,6 @@ class Pet(QWidget):
         if not self._hidden_for_fullscreen:
             self.say("全屏打字动画已" + ("开启" if self._fs_typing else "关闭") + "。", 4000)
 
-    def toggle_caret_follow(self):
-        self._caret_follow = not self._caret_follow
-        CONFIG["follow_caret"] = self._caret_follow
-        save_config()
-        if hasattr(self, "act_caret"):
-            self.act_caret.setChecked(self._caret_follow)
-        if not self._hidden_for_fullscreen:
-            self.say("打字跟随光标已" + ("开启" if self._caret_follow else "关闭") + "。", 4000)
-
-    # ---- 位置记忆 ----
     def _state_path(self):
         try:
             os.makedirs(STATE_DIR, exist_ok=True)
