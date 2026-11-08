@@ -1878,9 +1878,7 @@ def _ps_quote(s: str) -> str:
 
 
 def ensure_desktop_shortcut(force: bool = False) -> None:
-    """首次运行时在桌面放一个带图标的启动快捷方式（打包版才做）。"""
-    if not FROZEN:
-        return
+    """在桌面放一个带图标的启动快捷方式：打包版指向 exe，源码版指向 pythonw + app.py。"""
     try:
         desktop = QStandardPaths.writableLocation(QStandardPaths.DesktopLocation)
         if not desktop or not os.path.isdir(desktop):
@@ -1888,13 +1886,25 @@ def ensure_desktop_shortcut(force: bool = False) -> None:
         lnk = os.path.join(desktop, "达妮卡桌宠.lnk")
         if os.path.exists(lnk) and not force:
             return
-        exe = sys.executable
+        if FROZEN:
+            exe = sys.executable
+            args = ""
+            icon = exe + ",0"
+        else:
+            # 源码运行：用同目录的 pythonw.exe 拉起 app.py
+            py = sys.executable
+            pyw = os.path.join(os.path.dirname(py), "pythonw.exe")
+            exe = pyw if os.path.exists(pyw) else py
+            args = '"' + os.path.join(APP_DIR, "app.py") + '"'
+            ico = os.path.join(APP_DIR, "icon.ico")
+            icon = (ico + ",0") if os.path.exists(ico) else (exe + ",0")
         script = (
             "$ws = New-Object -ComObject WScript.Shell;"
             f"$sc = $ws.CreateShortcut({_ps_quote(lnk)});"
             f"$sc.TargetPath = {_ps_quote(exe)};"
+            f"$sc.Arguments = {_ps_quote(args)};"
             f"$sc.WorkingDirectory = {_ps_quote(APP_DIR)};"
-            f"$sc.IconLocation = {_ps_quote(exe + ',0')};"
+            f"$sc.IconLocation = {_ps_quote(icon)};"
             "$sc.Description = '达妮卡桌宠';"
             "$sc.Save()"
         )
